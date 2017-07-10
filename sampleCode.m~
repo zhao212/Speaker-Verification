@@ -1,0 +1,160 @@
+clear all
+
+tic
+%--------------------------
+% Define parameter
+%--------------------------
+frameShift = 0.001;     % [sec]
+
+NumFeatures = 1;        % Number of features 
+%NumFolds = 5;           % Number of cross validation folds
+
+%--------------------------
+% Get label
+%--------------------------
+
+
+label = load('dataLabel.mat');
+
+dataLabel = cat(1,label.FEMALE,label.MALE);
+
+crossInd = load('crossValIdx.mat');
+crossValIdx = cat(1;,crossInd.FEMALE,crossInd.MALE);
+crossValIdx = crossValIdx==1
+%dataLabel = cat(1,label.FEMALE,label.MALE);
+NumPairs = size(dataLabel,1);
+NumFolds = size(crossValIdx,2);
+
+
+% %%
+% %--------------------------
+% % Prepare for cross-validation
+% %--------------------------
+% permIdx = randperm(NumPairs);
+% 
+% crossValIdx = false(NumPairs,NumFolds);
+% NumElement = floor(NumPairs/NumFolds);
+% for n=1:NumFolds-1
+%     currFold = permIdx( 1+(n-1)*NumElement: n*NumElement);
+%     crossValIdx( currFold, n ) = true;
+% end
+% currFold = permIdx(1+n*NumElement:end);
+% crossValIdx(currFold, NumFolds) = true;
+% 
+
+fileNames = unique(dataLabel(:,1:2));
+nFile = size(fileNames,1);
+
+
+%%
+h=waitbar(0,'extracting features');
+
+for iFile = 1:nFile
+       
+     [snd,Fs] = audioread(['WavData/' fileNames{iFile} ]);   % NEW MATLAB VERSION
+   % [snd1,Fs1] = wavread(['WavData/' dataLabel{n,1} '.wav']);% OLD MATLAB VERSION
+      [f0, ~] = fast_mbsc_fixedWinlen_tracking(snd, Fs);
+      F0 = nanmean(f0(f0>0)); % Averaged F0 
+     save(['Features/' fileNames{iFile}(1:end-3) 'mat'],'F0','-v7.3');
+
+     
+end
+
+
+
+x = NaN*ones(NumPairs, NumFeatures);  % features
+y = NaN*ones(NumPairs, 1);  % variable to predict
+z = NaN*ones(NumPairs, 1);  % class label
+
+for n=1:NumPairs
+    waitbar(n/NumPairs)
+    
+    sd1 = dataLabel{n,1};
+    sd2 = dataLabel{n,2};
+
+    %--------------------------
+    % Load feature
+    %--------------------------
+    feat1 = load(['Features/' sd1(1:end-3) 'mat']);
+    feat2 = load(['Features/' sd2(1:end-3) 'mat']);     
+    
+    %--------------------------
+    % Save into variables
+    %--------------------------
+    x(n,1) = abs(feat1.F0 - feat2.F0); % Use the difference between mean pitch
+    
+   % y(n) = dataLabel{n,3}; % perceptual dis-similarity
+    z(n) = dataLabel{n,3}; % intra-speaker indicator
+end
+delete(h);
+
+% %%
+% %--------------------------
+% % Prepare for cross-validation
+% %--------------------------
+% permIdx = randperm(NumPairs);
+% 
+% crossValIdx = false(NumPairs,NumFolds);
+% NumElement = floor(NumPairs/NumFolds);
+% for n=1:NumFolds-1
+%     currFold = permIdx( 1+(n-1)*NumElement: n*NumElement);
+%     crossValIdx( currFold, n ) = true;
+% end
+% currFold = permIdx(1+n*NumElement:end);
+% crossValIdx(currFold, NumFolds) = true;
+% 
+
+%%
+rmsErr = NaN*ones(NumFolds,1);
+errRate= NaN*ones(NumFolds,1);
+for n=1:NumFolds
+
+% features 
+
+    x_train = x(~crossValIdx(:,n));
+    x_test  = x(crossValIdx(:,n));
+    
+% % perceptual dissimilarity label    
+%     y_train = y(~crossValIdx(:,n));
+%     y_test  = y(crossValIdx(:,n));
+%     
+% intra-speaker indication label 
+    
+    z_train = z(~crossValIdx(:,n));
+    z_test  = z(crossValIdx(:,n));
+    
+    %--------------------------
+    % Linear regression
+    %--------------------------
+    
+    %% Modify your code here >>>>>>>>>>>>>>>>>>>>>>>>>>>> 
+    
+%     p = polyfit(x_train,y_train,1);
+%     f = polyval(p,x_test);
+%     
+%     err = y_test-f;
+%     rmsErr(n) = sqrt( mean( err.^2) );
+%     
+
+    %--------------------------
+    % Naive Bayse classifier
+    %--------------------------
+    
+    
+    NBModel = NaiveBayes.fit(x_train,z_train);
+    z_test_hat = predict(NBModel,x_test);
+
+    %% <<<<<<<<<<<<<<<<<<<<<<<<<<<<<  Modify your code here
+    
+    err = z_test_hat ~= z_test;
+    errRate(n) = sum(err)/length(z_test);
+end
+
+%fprintf('averaged RMS = %.2f\n', mean(rmsErr));
+fprintf('averaged classification error = %.2f %% \n', 100* mean(errRate));
+
+toc
+
+
+figure
+stem(err)
